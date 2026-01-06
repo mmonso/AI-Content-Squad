@@ -1,0 +1,5 @@
+{
+  "name": "AI Content Squad",
+  "description": "A collaborative multi-agent AI writing environment where specialized agents write, review, correct, and approve high-quality content.",
+  "requestFramePermissions": []
+}
