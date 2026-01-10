@@ -1,89 +1,43 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { ReviewResponse, FinalApprovalResponse } from "../types";
+import { ProjectConfig } from "../types";
 
-export interface ProjectContext {
-  topic: string;
-  objective: string;
-  persona: string;
-  audience: string;
-  worldview: string;
-}
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-const replacePlaceholders = (prompt: string, replacements: Record<string, string>) => {
-  let result = prompt;
-  for (const [key, value] of Object.entries(replacements)) {
-    result = result.replace(new RegExp(`{{${key}}}`, 'g'), value);
-  }
-  return result;
+const replaceVars = (template: string, vars: Record<string, string>) => {
+  return template.replace(/{{(\w+)}}/g, (_, k) => vars[k] || '');
 };
 
 export const geminiService = {
-  async researchTopic(ctx: ProjectContext, promptTemplate: string): Promise<{ content: string; sources: Array<{ title: string; uri: string }> }> {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const finalPrompt = replacePlaceholders(promptTemplate, {
-      topic: ctx.topic,
-      objective: ctx.objective,
-    });
-
+  // 1. Pesquisa com Grounding (Google Search)
+  async research(topic: string, config: ProjectConfig, prompt: string) {
+    const finalPrompt = replaceVars(prompt, { topic, ...config });
     const response = await ai.models.generateContent({
       model: "gemini-3-pro-preview",
       contents: finalPrompt,
-      config: {
-        tools: [{ googleSearch: {} }],
-        responseMimeType: "text/plain"
-      }
+      config: { tools: [{ googleSearch: {} }] }
     });
-
+    
     const sources = response.candidates?.[0]?.groundingMetadata?.groundingChunks
-      ?.map((chunk: any) => chunk.web ? { title: chunk.web.title, uri: chunk.web.uri } : null)
-      .filter((s: any) => s !== null) || [];
-      
-    // Remove duplicates
-    const uniqueSources = sources.filter((s, index, self) =>
-        index === self.findIndex((t) => (
-            t.uri === s.uri
-        ))
-    );
+      ?.map((c: any) => c.web ? { title: c.web.title, uri: c.web.uri } : null)
+      .filter(Boolean) || [];
 
-    return {
-      content: response.text || "Pesquisa não retornou resultados.",
-      sources: uniqueSources
-    };
+    return { content: response.text, sources };
   },
 
-  async writeContent(ctx: ProjectContext, researchData: string, promptTemplate: string): Promise<string> {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const finalPrompt = replacePlaceholders(promptTemplate, {
-      topic: ctx.topic,
-      objective: ctx.objective,
-      persona: ctx.persona,
-      audience: ctx.audience,
-      worldview: ctx.worldview,
-      research: researchData
-    });
-
+  // 2. Escrita Criativa
+  async write(research: string, config: ProjectConfig, prompt: string) {
+    const finalPrompt = replaceVars(prompt, { research, ...config });
     const response = await ai.models.generateContent({
       model: "gemini-3-pro-preview",
       contents: finalPrompt,
-      config: {
-        temperature: 0.9,
-      }
     });
-    return response.text || "Erro ao gerar conteúdo.";
+    return response.text;
   },
 
-  async reviewContent(content: string, ctx: ProjectContext, promptTemplate: string): Promise<ReviewResponse> {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const finalPrompt = replacePlaceholders(promptTemplate, {
-      content,
-      topic: ctx.topic,
-      objective: ctx.objective,
-      persona: ctx.persona,
-      audience: ctx.audience,
-      worldview: ctx.worldview
-    });
-
+  // 3. Revisão com JSON Schema
+  async review(content: string, config: ProjectConfig, prompt: string) {
+    const finalPrompt = replaceVars(prompt, { content, ...config });
     const response = await ai.models.generateContent({
       model: "gemini-3-pro-preview",
       contents: finalPrompt,
@@ -92,101 +46,34 @@ export const geminiService = {
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            status: { type: Type.STRING, enum: ["CORRIGIR", "APROVAR"] },
-            feedback: { type: Type.STRING, description: "Críticas detalhadas." }
+            approved: { type: Type.BOOLEAN },
+            feedback: { type: Type.STRING }
           },
-          required: ["status", "feedback"]
+          required: ["approved", "feedback"]
         }
       }
     });
-    return JSON.parse(response.text || "{}") as ReviewResponse;
+    return JSON.parse(response.text);
   },
 
-  async correctContent(content: string, feedback: string, ctx: ProjectContext, promptTemplate: string): Promise<string> {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const finalPrompt = replacePlaceholders(promptTemplate, {
-      content,
-      feedback,
-      topic: ctx.topic,
-      objective: ctx.objective,
-      persona: ctx.persona,
-      audience: ctx.audience,
-      worldview: ctx.worldview
-    });
-
-    const response = await ai.models.generateContent({
+  // 4. Geração de Imagem Editorial
+  async generateArt(content: string, promptTemplate: string) {
+    // Primeiro, pede ao Gemini 3 para criar um prompt visual épico em inglês
+    const promptGen = await ai.models.generateContent({
       model: "gemini-3-pro-preview",
-      contents: finalPrompt,
-      config: {
-        temperature: 0.5,
-      }
-    });
-    return response.text || "Erro ao corrigir conteúdo.";
-  },
-
-  async manageApproval(content: string, ctx: ProjectContext, promptTemplate: string): Promise<FinalApprovalResponse> {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const finalPrompt = replacePlaceholders(promptTemplate, {
-      content,
-      topic: ctx.topic,
-      objective: ctx.objective,
-      persona: ctx.persona,
-      audience: ctx.audience,
-      worldview: ctx.worldview
-    });
-
-    const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
-      contents: finalPrompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            status: { type: Type.STRING, enum: ["OK", "CORRIGIR"] },
-            comentario: { type: Type.STRING, description: "Veredito final." }
-          },
-          required: ["status", "comentario"]
-        }
-      }
-    });
-    return JSON.parse(response.text || "{}") as FinalApprovalResponse;
-  },
-
-  async generateImage(content: string, promptTemplate: string): Promise<string> {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    
-    // First, use pro to generate a good visual prompt
-    const promptResponse = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
-      contents: replacePlaceholders(promptTemplate, { content }),
+      contents: `Baseado neste artigo, crie um prompt detalhado em inglês para uma ilustração editorial artística: ${content}`
     });
     
-    const visualPrompt = promptResponse.text || "An editorial illustration for a professional article.";
-
-    // Then, use image model to generate the actual image
-    const response = await ai.models.generateContent({
+    const visualPrompt = promptGen.text;
+    
+    // Segundo, gera a imagem
+    const imgResponse = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
-      contents: {
-        parts: [
-          {
-            text: visualPrompt,
-          },
-        ],
-      },
-      config: {
-        imageConfig: {
-          aspectRatio: "16:9",
-        },
-      },
+      contents: { parts: [{ text: visualPrompt }] },
+      config: { imageConfig: { aspectRatio: "16:9" } }
     });
 
-    for (const part of response.candidates?.[0]?.content?.parts || []) {
-      if (part.inlineData) {
-        return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-      }
-    }
-    
-    throw new Error("Falha ao gerar imagem.");
+    const part = imgResponse.candidates?.[0]?.content.parts.find(p => p.inlineData);
+    return part ? `data:${part.inlineData.mimeType};base64,${part.inlineData.data}` : null;
   }
 };
