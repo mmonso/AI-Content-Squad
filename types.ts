@@ -10,31 +10,14 @@ export enum AgentRole {
 
 export type TaskStatus = 'QUEUED' | 'PROCESSING' | 'READY_FOR_HUMAN' | 'COMPLETED' | 'FAILED';
 
-export interface AgentPrompts {
-  [AgentRole.RESEARCHER]: string;
-  [AgentRole.WRITER]: string;
-  [AgentRole.REVIEWER]: string;
-  [AgentRole.CORRECTOR]: string;
-  [AgentRole.MANAGER]: string;
-  [AgentRole.DESIGNER]: string;
-}
-
 export interface Task {
   id: string;
   topic: string;
-  steps: Step[];
   status: TaskStatus;
   finalContent?: string;
   imageUrl?: string;
   createdAt: Date;
-}
-
-export interface Agent {
-  id: AgentRole;
-  name: string;
-  roleTitle: string;
-  description: string;
-  color: string;
+  steps: Step[];
 }
 
 export interface Step {
@@ -44,21 +27,17 @@ export interface Step {
   feedback?: string;
   status: 'PENDING' | 'WORKING' | 'COMPLETED' | 'REJECTED';
   timestamp: Date;
-  sources?: Array<{ title: string; uri: string }>;
+  sources?: any[];
 }
 
-export interface ReviewResponse {
-  status: 'CORRIGIR' | 'APROVAR';
-  feedback: string;
+export interface AgentPrompts {
+  [key: string]: string;
 }
 
-export interface FinalApprovalResponse {
-  status: 'OK' | 'CORRIGIR';
-  comentario: string;
-}
-
+// Added 'AUTUMN' to the ThemeMode union
 export type ThemeMode = 'DARK' | 'LIGHT' | 'AUTUMN' | 'GLASS';
 
+// Added missing ThemeConfig interface
 export interface ThemeConfig {
   appBg: string;
   sidebarBg: string;
@@ -68,11 +47,27 @@ export interface ThemeConfig {
   textMain: string;
   textSec: string;
   textMuted: string;
-  accent: string; // color name for dynamic construction
+  accent: string;
   accentBg: string;
   accentText: string;
   accentBorder: string;
   buttonSecondary: string;
   inputBg: string;
-  isGlass?: boolean;
+  isGlass: boolean;
+}
+
+// Added missing Agent interface
+export interface Agent {
+  id: AgentRole;
+  name: string;
+  roleTitle: string;
+  description: string;
+  color: string;
+}
+
+export interface ProjectConfig {
+  objective: string;
+  persona: string;
+  audience: string;
+  worldview: string;
 }
